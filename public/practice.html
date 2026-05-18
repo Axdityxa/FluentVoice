@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Practice - FluentVoice</title>
+   <link rel="stylesheet" href="/css/styles.css">
+   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+   <script src="/js/audio-utils.js"></script>
+   <script src="/js/api.js"></script>
+   <style>
+       body {
+           font-family: 'Poppins', sans-serif;
+           margin: 0;
+           padding: 0;
+           background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+           min-height: 100vh;
+       }
+
+
+       .container {
+           max-width: 800px;
+           margin: 0 auto;
+           padding: 2rem;
+       }
+
+
+       .analysis-section {
+           background: white;
+           padding: 2rem;
+           border-radius: 10px;
+           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+           margin-bottom: 2rem;
+       }
+
+
+       .record-button {
+           display: inline-block;
+           padding: 1rem 2rem;
+           background-color: #3498db;
+           color: white;
+           border: none;
+           border-radius: 30px;
+           font-weight: 500;
+           cursor: pointer;
+           transition: all 0.3s ease;
+       }
+
+
+       .record-button:hover {
+           background-color: #2980b9;
+       }
+
+
+       .record-button.recording {
+           background-color: #e74c3c;
+       }
+
+
+       #transcription, #feedback {
+           margin-top: 1rem;
+           padding: 1rem;
+           background: #f8f9fa;
+           border-radius: 5px;
+           min-height: 100px;
+       }
+
+
+       .status {
+           color: #7f8c8d;
+           margin-top: 0.5rem;
+       }
+
+
+       .button-group {
+           display: flex;
+           gap: 1rem;
+           margin-bottom: 1rem;
+       }
+
+
+       .play-button {
+           display: inline-block;
+           padding: 1rem 2rem;
+           background-color: #27ae60;
+           color: white;
+           border: none;
+           border-radius: 30px;
+           font-weight: 500;
+           cursor: pointer;
+           transition: all 0.3s ease;
+       }
+
+
+       .play-button:hover {
+           background-color: #219a52;
+       }
+
+
+       .play-button:disabled {
+           background-color: #bdc3c7;
+           cursor: not-allowed;
+       }
+
+
+       .audio-player {
+           margin-top: 1rem;
+           width: 100%;
+       }
+
+       .twister-text {
+           font-size: 1.2em;
+           font-weight: 500;
+           color: #2c3e50;
+           margin-bottom: 0.5rem;
+           line-height: 1.4;
+       }
+
+       .focus-phoneme {
+           font-size: 0.85em;
+           color: rgba(102, 102, 102, 0.7);
+           font-style: italic;
+           margin-top: 0.3rem;
+       }
+   </style>
+</head>
+<body>
+   <nav class="site-nav container container--narrow">
+       <a href="/">Home</a>
+       <a href="/proficiency.html">Proficiency Test</a>
+       <a href="/analyze.html">Analyze</a>
+   </nav>
+   <div class="container container--narrow">
+       <div class="analysis-section">
+           <h2>Speech Analysis</h2>
+           
+           <h3>Practice Missed Phonemes</h3>
+           <button id="tongueTwisterButton" class="record-button">Generate Sentence</button>
+           <div id="tongueTwisterDisplay" style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 5px;">
+               Click the button to get a sentence...
+           </div>
+
+           <div class="button-group" style="margin-top: 2rem;">
+               <button id="recordButton" class="record-button">Start Recording</button>
+               <button id="playButton" class="play-button" disabled>Play Recording</button>
+           </div>
+           <p class="status" id="status">Click to start recording</p>
+          
+           <audio id="audioPlayback" class="audio-player" controls style="display: none;"></audio>
+          
+           <h3>Your Speech</h3>
+           <div id="transcription">Transcription will appear here...</div>
+          
+           <h3>AI Feedback</h3>
+           <div id="feedback">Feedback will appear here...</div>
+
+           <!-- <div class="analysis-section">
+               <h3>Raw Analysis Data</h3>
+               <pre id="rawData" style="background: #f8f9fa; padding: 1rem; border-radius: 5px; overflow-x: auto;">
+                   Raw data will appear here...
+               </pre>
+           </div> -->
+       </div>
+   </div>
+
+
+   <script>
+       let mediaRecorder;
+       let audioChunks = [];
+       let audioUrl;
+      
+       const recordButton = document.getElementById('recordButton');
+       const playButton = document.getElementById('playButton');
+       const status = document.getElementById('status');
+       const audioPlayback = document.getElementById('audioPlayback');
+       const transcriptionDiv = document.getElementById('transcription');
+       const feedbackDiv = document.getElementById('feedback');
+
+       // Initialize variables at the top of the script
+       let currentTongueTwister = "";
+       const tongueTwisterButton = document.getElementById('tongueTwisterButton');
+       const tongueTwisterDisplay = document.getElementById('tongueTwisterDisplay');
+
+       recordButton.addEventListener('click', async () => {
+           if (mediaRecorder && mediaRecorder.state === 'recording') {
+               mediaRecorder.stop();
+               recordButton.textContent = 'Start Recording';
+               recordButton.classList.remove('recording');
+           } else {
+               try {
+                   const stream = await navigator.mediaDevices.getUserMedia({
+                       audio: {
+                           channelCount: 1,
+                           sampleRate: 16000
+                       }
+                   });
+                   
+                   audioChunks = [];
+                   
+                   mediaRecorder = new MediaRecorder(stream, {
+                       mimeType: 'audio/webm'  // Record in WebM format first
+                   });
+                   
+                   mediaRecorder.ondataavailable = (event) => {
+                       if (event.data.size > 0) {
+                           audioChunks.push(event.data);
+                           console.log('Chunk received:', event.data.size);
+                       }
+                   };
+
+                   mediaRecorder.onstop = () => {
+                       // Create the WebM blob
+                       const webmBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                       console.log('WebM blob created, size:', webmBlob.size);
+                       
+                       // Create URL for playback
+                       if (audioUrl) {
+                           URL.revokeObjectURL(audioUrl);
+                       }
+                       audioUrl = URL.createObjectURL(webmBlob);
+                       
+                       // Set up audio playback
+                       audioPlayback.src = audioUrl;
+                       audioPlayback.style.display = 'block';
+                       playButton.disabled = false;
+
+                       // Convert WebM to WAV
+                       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                       const fileReader = new FileReader();
+
+                       fileReader.onloadend = () => {
+                           const arrayBuffer = fileReader.result;
+                           audioContext.decodeAudioData(arrayBuffer, (audioBuffer) => {
+                               // Convert to WAV
+                               const wavBuffer = audioBufferToWav(audioBuffer);
+                               const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+                               
+                               // Send WAV to server
+                               const formData = new FormData();
+                               formData.append('audio', wavBlob, 'recording.wav');
+                               
+                               fetch('/api/analyze-speech', {
+                                   method: 'POST',
+                                   body: formData
+                               })
+                               .then(response => response.json())
+                               .then(results => {
+                                   console.log('Received data from server:', JSON.stringify(results, null, 2));
+                                   
+                                   // Update practice history for problem phonemes
+                                   if (results.phonemes) {
+                                       const currentPhonemes = new Set(problemPhonemes);
+                                       results.phonemes.forEach(phoneme => {
+                                           if (currentPhonemes.has(phoneme.phoneme)) {
+                                               practiceHistory.push({
+                                                   phoneme: phoneme.phoneme,
+                                                   score: phoneme.accuracyScore,
+                                                   timestamp: Date.now()
+                                               });
+                                           }
+                                       });
+                                       
+                                       // Update the practice status display
+                                       updatePracticeStatus();
+                                   }
+                                   
+                                   // Create colored transcription display
+                                   let transcriptionHtml = '<div style="font-size: 1.5em; line-height: 1.5; letter-spacing: 1px;">';
+                                   
+                                   // Create a map of letter positions to phonemes
+                                   const letterToPhoneme = new Map();
+                                   let currentPosition = 0;
+                                   
+                                   // First, normalize the phoneme data
+                                   const normalizedPhonemes = results.phonemes.map(p => ({
+                                       ...p,
+                                       phoneme: p.phoneme.toLowerCase(),
+                                       fromWord: p.fromWord.toLowerCase()
+                                   }));
+
+                                   // Enhanced phoneme-to-letter mappings
+                                   const phonemeMap = {
+                                       // Vowels
+                                       'iy': 'i|y|ee|ea|e',
+                                       'ih': 'i|y|e',
+                                       'eh': 'e|ea|a',
+                                       'ae': 'a|ai',
+                                       'ah': 'u|o|a',
+                                       'uw': 'oo|u|o',
+                                       'uh': 'oo|u|o',
+                                       'ao': 'o|au|aw|a',
+                                       'aa': 'a|o',
+                                       'ey': 'a|ay|ai|ei',
+                                       'ay': 'i|y|ie',
+                                       'oy': 'oi|oy',
+                                       'ow': 'o|ow',
+                                       'aw': 'ow|ou|au',
+                                       'ax': 'a|e|i|o|u', // Schwa sound
+                                       // Consonants
+                                       'p': 'p',
+                                       'b': 'b',
+                                       't': 't',
+                                       'd': 'd',
+                                       'k': 'k|c|ck|ch',
+                                       'g': 'g',
+                                       'ch': 'ch|tch',
+                                       'jh': 'j|g|dge',
+                                       'f': 'f|ph|gh',
+                                       'v': 'v',
+                                       'th': 'th',
+                                       'dh': 'th',
+                                       's': 's|c|ce|ss',
+                                       'z': 'z|s|ss',
+                                       'sh': 'sh|ti|ci',
+                                       'zh': 's|si',
+                                       'hh': 'h',
+                                       'm': 'm|mm',
+                                       'n': 'n|nn|kn',
+                                       'ng': 'ng',
+                                       'l': 'l|ll',
+                                       'r': 'r|rr|wr',
+                                       'y': 'y|i',
+                                       'w': 'w|wh',
+                                       'dx': 't|tt|dd', // Flap T
+                                       'er': 'er|ir|ur|or|ar'
+                                   };
+
+                                   results.transcription.split(' ').forEach(word => {
+                                       const wordLower = word.toLowerCase();
+                                       const wordPhonemes = normalizedPhonemes.filter(p => p.fromWord === wordLower);
+                                       
+                                       // Map each letter to its corresponding phoneme
+                                       word.split('').forEach(letter => {
+                                           const letterLower = letter.toLowerCase();
+                                           let matchFound = false;
+                                           
+                                           // First try: exact phoneme match
+                                           for (const phoneme of wordPhonemes) {
+                                               if (phoneme.phoneme === letterLower) {
+                                                   letterToPhoneme.set(currentPosition, phoneme);
+                                                   matchFound = true;
+                                                   break;
+                                               }
+                                           }
+                                           
+                                           // Second try: phoneme mapping
+                                           if (!matchFound) {
+                                               for (const phoneme of wordPhonemes) {
+                                                   for (const [phone, letters] of Object.entries(phonemeMap)) {
+                                                       if (phoneme.phoneme.includes(phone) && letters.split('|').includes(letterLower)) {
+                                                           letterToPhoneme.set(currentPosition, phoneme);
+                                                           matchFound = true;
+                                                           break;
+                                                       }
+                                                   }
+                                                   if (matchFound) break;
+                                               }
+                                           }
+                                           
+                                           // Third try: fuzzy match
+                                           if (!matchFound) {
+                                               const bestMatch = wordPhonemes.find(p => 
+                                                   p.phoneme.includes(letterLower) || 
+                                                   letterLower.includes(p.phoneme) ||
+                                                   Object.entries(phonemeMap).some(([phone, letters]) => 
+                                                       p.phoneme.includes(phone) && letters.includes(letterLower)
+                                                   )
+                                               );
+                                               if (bestMatch) {
+                                                   letterToPhoneme.set(currentPosition, bestMatch);
+                                               } else {
+                                                   // Last resort: assign to the closest phoneme in the word
+                                                   if (wordPhonemes.length > 0) {
+                                                       letterToPhoneme.set(currentPosition, wordPhonemes[0]);
+                                                   }
+                                               }
+                                           }
+                                           
+                                           currentPosition++;
+                                       });
+                                       currentPosition++; // Account for space between words
+                                   });
+                                   
+                                   // Color each letter based on its phoneme accuracy
+                                   let position = 0;
+                                   results.transcription.split('').forEach(letter => {
+                                       const phoneme = letterToPhoneme.get(position);
+                                       // Default to perfect score color (green) unless we have a specific lower score
+                                       const color = (phoneme && phoneme.accuracyScore < 90) ? 
+                                           getScoreColor(phoneme.accuracyScore) : 
+                                           '#27ae60';  // Default green for perfect score
+                                       
+                                       if (letter === ' ') {
+                                           transcriptionHtml += ' ';
+                                       } else {
+                                           transcriptionHtml += `<span style="color: ${color}; font-weight: bold;">${letter}</span>`;
+                                       }
+                                       position++;
+                                   });
+                                   
+                                   transcriptionHtml += '</div>';
+                                   transcriptionDiv.innerHTML = transcriptionHtml;
+
+                                   // Modify the feedback section to focus on problem phonemes
+                                   let analysisHtml = '<h3>Phoneme Analysis</h3>';
+                                   
+                                   if (results.phonemes && results.phonemes.length > 0) {
+                                       analysisHtml += '<div style="display: flex; flex-direction: column; gap: 1.5rem; padding: 1rem;">';
+                                       
+                                       // Group phonemes by word and highlight problem ones
+                                       const phonemesByWord = {};
+                                       results.phonemes.forEach(phoneme => {
+                                           if (!phonemesByWord[phoneme.fromWord]) {
+                                               phonemesByWord[phoneme.fromWord] = [];
+                                           }
+                                           phonemesByWord[phoneme.fromWord].push({
+                                               ...phoneme,
+                                               isProblem: problemPhonemes.includes(phoneme.phoneme)
+                                           });
+                                       });
+
+                                       // For each word
+                                       Object.entries(phonemesByWord).forEach(([word, phonemes]) => {
+                                           analysisHtml += `
+                                               <div style="
+                                                   background: white;
+                                                   border-radius: 8px;
+                                                   padding: 1rem;
+                                                   box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                                   <h4 style="
+                                                       margin: 0 0 0.8rem 0;
+                                                       color: #333;
+                                                       font-size: 1.2em;
+                                                       border-bottom: 1px solid #eee;
+                                                       padding-bottom: 0.5rem;">
+                                                       "${word}"
+                                                   </h4>
+                                                   <div style="
+                                                       display: flex;
+                                                       flex-wrap: wrap;
+                                                       gap: 0.5rem;
+                                                       justify-content: flex-start;">`;
+                                               
+                                               // For each phoneme in the word
+                                               phonemes.forEach(phoneme => {
+                                                   const accuracyScore = phoneme.accuracyScore || 0;
+                                                   const accuracyColor = getScoreColor(accuracyScore);
+                                                   const isProblemPhoneme = phoneme.isProblem;
+                                                   
+                                                   analysisHtml += `
+                                                       <div style="
+                                                           display: inline-flex;
+                                                           flex-direction: column;
+                                                           align-items: center;
+                                                           background: ${isProblemPhoneme ? '#fff3e0' : '#f8f9fa'};
+                                                           border: ${isProblemPhoneme ? '2px solid #ff9800' : '1px solid #ddd'};
+                                                           border-radius: 8px;
+                                                           padding: 0.6rem;
+                                                           min-width: 60px;">
+                                                           <span style="
+                                                               font-size: 1.1em;
+                                                               font-weight: bold;
+                                                               color: #333;
+                                                               margin-bottom: 0.2rem;">
+                                                               ${phoneme.phoneme}
+                                                               ${isProblemPhoneme ? ' 🎯' : ''}
+                                                           </span>
+                                                           <span style="
+                                                               color: ${accuracyColor};
+                                                               font-weight: bold;
+                                                               font-size: 1em;">
+                                                               ${accuracyScore}%
+                                                           </span>
+                                                           ${isProblemPhoneme ? `
+                                                           <div style="
+                                                               font-size: 0.8em;
+                                                               color: #666;
+                                                               margin-top: 0.3rem;
+                                                               text-align: center;">
+                                                               Focus sound
+                                                           </div>
+                                                           ` : ''}
+                                                       </div>`;
+                                               });
+                                               
+                                               analysisHtml += `
+                                                       </div>
+                                                   </div>`;
+                                           });
+                                           
+                                           // Add practice suggestions
+                                           if (problemPhonemes.length > 0) {
+                                               const lowScorePhonemes = results.phonemes
+                                                   .filter(p => problemPhonemes.includes(p.phoneme) && p.accuracyScore < 75)
+                                                   .map(p => p.phoneme);
+                                               
+                                               if (lowScorePhonemes.length > 0) {
+                                                   analysisHtml += `
+                                                       <div style="
+                                                           margin-top: 2rem;
+                                                           padding: 1rem;
+                                                           background: #e3f2fd;
+                                                           border-radius: 8px;
+                                                           border-left: 4px solid #2196f3;">
+                                                           <h4 style="margin: 0 0 0.5rem 0; color: #1565c0;">
+                                                               Practice Suggestions
+                                                           </h4>
+                                                           <p style="margin: 0 0 1rem 0; color: #333;">
+                                                               Focus on improving these sounds: 
+                                                               ${lowScorePhonemes.map(p => `<strong>${p}</strong>`).join(', ')}
+                                                           </p>
+                                                           <div style="display: flex; flex-direction: column; gap: 0.8rem;">
+                                                               ${lowScorePhonemes.map(phoneme => `
+                                                                   <button 
+                                                                       class="practice-button"
+                                                                       onclick="smoothScrollToElement('tongueTwisterDisplay'); generateTongueTwister('${phoneme}')">
+                                                                       <span class="scroll-indicator">↑</span>
+                                                                       Practice "${phoneme}" sound
+                                                                       <svg viewBox="0 0 24 24" fill="currentColor">
+                                                                           <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+                                                                       </svg>
+                                                                   </button>
+                                                               `).join('')}
+                                                           </div>
+                                                       </div>`;
+                                               }
+                                           }
+                                           
+                                           analysisHtml += '</div>';
+                                       } else {
+                                           analysisHtml += `
+                                               <div style="text-align: center; padding: 2rem;">
+                                                   <p style="color: #e74c3c; font-size: 1.1em;">No phoneme analysis available.</p>
+                                                   <p>Please try speaking more clearly or check your microphone.</p>
+                                               </div>`;
+                                       }
+                                       
+                                       feedbackDiv.innerHTML = analysisHtml;
+                                       
+                                       status.textContent = 'Analysis complete';
+
+                                       // Display raw data
+                                       document.getElementById('rawData').textContent = JSON.stringify(results, null, 2);
+                                   })
+                                   .catch(error => {
+                                       console.error('Server error:', error);
+                                       status.textContent = 'Server error: ' + error.message;
+                                   });
+                           });
+                       };
+
+                       fileReader.readAsArrayBuffer(webmBlob);
+                   };
+
+                   mediaRecorder.start(100);
+                   recordButton.textContent = 'Stop Recording';
+                   recordButton.classList.add('recording');
+                   status.textContent = 'Recording...';
+
+               } catch (error) {
+                   console.error('Recording error:', error);
+                   status.textContent = 'Error: ' + error.message;
+               }
+           }
+       });
+
+       // Tongue twister functionality
+       const tongueTwisters = {
+           // Organized by primary phoneme focus
+           'r': [
+               "The red robot runs rapidly down the road",
+               "Round and round the ragged rocks the ragged rascal ran",
+               "Brave rabbits rarely run right past the river"
+           ],
+           's': [
+               "She sells seashells by the seashore",
+               "Six slick slim slippery snakes slid slowly southward",
+               "Sally saw some soldiers standing silently"
+           ],
+           'th': [
+               "Thirty-three thirsty thieves thought thoughtfully",
+               "Three thin thinkers thinking thick thoughts",
+               "They thanked the thoughtful theater therapist"
+           ],
+           'l': [
+               "Little lucky Larry likes licking lemon lollipops",
+               "Lovely yellow lilies line lily's lawn",
+               "Light blue liquid lazily leaked"
+           ],
+           'ch': [
+               "Charlie chews crunchy chocolate chips",
+               "Choose cheerful children to chase chickens",
+               "The cheerful teacher chose chocolate cherries"
+           ],
+           'sh': [
+               "She should show Shane the shiny shells",
+               "Shy sheep should sleep in sheds",
+               "The ship shop sells shipping shapes"
+           ],
+           'f': [
+               "Five friendly farmers fought for fresh food",
+               "Funny Phil fell firmly on fluffy pillows",
+               "Fresh fruit fills four fine fridges"
+           ],
+           'v': [
+               "Victor viewed various valuable vases",
+               "Vivid violet violets give vanilla vibes",
+               "Five brave veterans saved very valuable vests"
+           ],
+           'p': [
+               "Peter Piper picked a peck of pickled peppers",
+               "Playful puppies pounced perfectly past the porch",
+               "Please place the purple pen on the paper"
+           ],
+           'b': [
+               "Big brown bears bought blue balloons",
+               "The busy baker brought better bread",
+               "Black bugs bleed blue blood"
+           ],
+           'k': [
+               "Kind kangaroos kept colorful kites",
+               "The keen king kept the castle clean",
+               "Quick kittens can catch cold cream"
+           ],
+           'g': [
+               "Great green giants grow good grapes",
+               "The generous girl gave golden gifts",
+               "Gary got a good grade growing gardens"
+           ]
+       };
+
+       let problemPhonemes = [];
+       let practiceHistory = [];
+       let currentScore = 0;
+
+       // Load problem phonemes from localStorage
+       function loadProblemPhonemes() {
+           const stored = localStorage.getItem('problemSounds');
+           if (stored) {
+               problemPhonemes = JSON.parse(stored);
+               updatePracticeStatus();
+           }
+       }
+
+       // Update the practice status display
+       function updatePracticeStatus() {
+           const statusDiv = document.createElement('div');
+           statusDiv.className = 'practice-status';
+           
+           // Calculate progress for each phoneme
+           const phonemeProgress = {};
+           problemPhonemes.forEach(phoneme => {
+               const attempts = practiceHistory.filter(h => h.phoneme === phoneme);
+               if (attempts.length === 0) {
+                   phonemeProgress[phoneme] = 0;
+                   return;
+               }
+               
+               // Calculate average score from all attempts for this phoneme
+               const totalScore = attempts.reduce((acc, curr) => acc + curr.score, 0);
+               phonemeProgress[phoneme] = totalScore / attempts.length;
+           });
+           
+           statusDiv.innerHTML = `
+               <h3 class="practice-focus-title">Practice Focus</h3>
+               <div class="practice-focus-grid">
+                   ${Object.entries(phonemeProgress).map(([phoneme, progress]) => `
+                       <div class="phoneme-progress-card">
+                           <div class="phoneme-label">${phoneme}</div>
+                           <div class="progress-bar-container">
+                               <div class="progress-bar" style="width: ${progress}%"></div>
+                           </div>
+                           <div class="progress-percentage">${Math.round(progress)}%</div>
+                       </div>
+                   `).join('')}
+               </div>
+           `;
+           
+           // Insert after the title
+           const title = document.querySelector('h2');
+           if (title.nextSibling?.className === 'practice-status') {
+               title.parentNode.replaceChild(statusDiv, title.nextSibling);
+           } else {
+               title.parentNode.insertBefore(statusDiv, title.nextSibling);
+           }
+       }
+
+       // Helper function to calculate progress data
+       function calculateProgressData() {
+           const data = {
+               phonemeProgress: {},
+               trends: {},
+               streaks: [],
+               overallProgress: 0
+           };
+           
+           problemPhonemes.forEach(phoneme => {
+               const attempts = practiceHistory.filter(h => h.phoneme === phoneme);
+               if (attempts.length === 0) {
+                   data.phonemeProgress[phoneme] = 0;
+                   data.trends[phoneme] = 0;
+                   return;
+               }
+               
+               // Calculate current progress
+               const recentAttempts = attempts.slice(-5);
+               data.phonemeProgress[phoneme] = recentAttempts.reduce((acc, curr) => acc + curr.score, 0) / recentAttempts.length;
+               
+               // Calculate trend
+               if (attempts.length >= 2) {
+                   const prevScore = attempts[attempts.length - 2].score;
+                   const currentScore = attempts[attempts.length - 1].score;
+                   data.trends[phoneme] = Math.round(currentScore - prevScore);
+               }
+               
+               // Check for streaks
+               let streak = 1;
+               for (let i = attempts.length - 1; i > 0; i--) {
+                   if (attempts[i].score > attempts[i-1].score) {
+                       streak++;
+                   } else {
+                       break;
+                   }
+               }
+               if (streak >= 3) {
+                   data.streaks.push({ phoneme, count: streak });
+               }
+           });
+           
+           // Calculate overall progress
+           const totalProgress = Object.values(data.phonemeProgress).reduce((acc, curr) => acc + curr, 0);
+           data.overallProgress = totalProgress / problemPhonemes.length;
+           
+           return data;
+       }
+
+       // Helper function to get tooltip content
+       function getPhonemeTooltip(phoneme, progress) {
+           if (progress < 50) {
+               return getTipForPhoneme(phoneme);
+           } else if (progress < 80) {
+               return "Keep practicing! You're getting better.";
+           } else {
+               return "Excellent! You've nearly mastered this sound.";
+           }
+       }
+
+       // Helper function to get tips for specific phonemes
+       function getTipForPhoneme(phoneme) {
+           const tips = {
+               'th': "Place your tongue between your teeth and blow gently.",
+               'r': "Curl your tongue back slightly and make the sound from the middle of your mouth.",
+               's': "Keep your tongue behind your top teeth and make a hissing sound.",
+               'z': "Like 's' but add voice - make your vocal cords vibrate.",
+               'sh': "Make a 'shushing' sound by rounding your lips.",
+               'ch': "Combine 't' and 'sh' sounds quickly.",
+               'l': "Touch the tip of your tongue to the roof of your mouth.",
+               // Add more tips for other phonemes
+           };
+           return tips[phoneme.toLowerCase()] || "Focus on making this sound clear and distinct.";
+       }
+
+       // Helper function to get progress class
+       function getProgressClass(progress) {
+           if (progress >= 80) return 'excellent';
+           if (progress >= 50) return 'good';
+           return 'needs-work';
+       }
+
+       // Add smooth scroll function
+       function smoothScrollToElement(elementId) {
+           const element = document.getElementById(elementId);
+           if (element) {
+               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+           }
+       }
+
+       // Modified tongue twister generation with phoneme parameter
+       function generateTongueTwister(specificPhoneme = null) {
+           if (problemPhonemes.length === 0) {
+               tongueTwisterDisplay.innerHTML = `
+                   <div class="twister-text">Please complete the proficiency test first to get personalized practice sentences.</div>
+               `;
+               return;
+           }
+
+           // Use the specified phoneme or select a random one from problem phonemes
+           let phoneme = specificPhoneme || problemPhonemes[Math.floor(Math.random() * problemPhonemes.length)];
+           
+           // Get tongue twisters for this phoneme
+           let twistersForPhoneme = tongueTwisters[phoneme.toLowerCase()] || [];
+           
+           // If no specific twisters found for this phoneme, find another phoneme that has twisters
+           if (twistersForPhoneme.length === 0) {
+               const availablePhonemes = Object.keys(tongueTwisters).filter(p => tongueTwisters[p].length > 0);
+               if (availablePhonemes.length > 0) {
+                   phoneme = availablePhonemes[Math.floor(Math.random() * availablePhonemes.length)];
+                   twistersForPhoneme = tongueTwisters[phoneme];
+               }
+           }
+           
+           // Select a random tongue twister
+           currentTongueTwister = twistersForPhoneme[Math.floor(Math.random() * twistersForPhoneme.length)];
+           
+           // Update the display with focus phoneme
+           tongueTwisterDisplay.innerHTML = `
+               <div class="twister-text">${currentTongueTwister}</div>
+               <div class="focus-phoneme">Focus on the "${phoneme}" sound</div>
+           `;
+
+           // Send the new reference text to the server
+           fetch('/api/set-reference', {
+               method: 'POST',
+               headers: {
+                   'Content-Type': 'application/json',
+               },
+               body: JSON.stringify({ 
+                   referenceText: currentTongueTwister,
+                   targetPhoneme: phoneme 
+               })
+           })
+           .catch(error => console.error('Error setting reference text:', error));
+       }
+
+       // Update the tongue twister button click handler
+       tongueTwisterButton.addEventListener('click', () => {
+           generateTongueTwister();
+       });
+
+       playButton.onclick = () => {
+           if (audioPlayback.paused) {
+               audioPlayback.play();
+               playButton.textContent = 'Pause';
+           } else {
+               audioPlayback.pause();
+               playButton.textContent = 'Play Recording';
+           }
+       };
+
+       audioPlayback.onended = () => {
+           playButton.textContent = 'Play Recording';
+       };
+   </script>
+
+   <script>
+       // Add styles for the tongue twister display and practice elements
+       const styleSheet = document.createElement("style");
+       styleSheet.textContent = `
+           .practice-status {
+               margin: 2rem 0;
+               padding: 1rem;
+               background: white;
+               border-radius: 10px;
+               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+           }
+
+           .practice-focus-grid {
+               display: grid;
+               grid-template-columns: repeat(3, 1fr);
+               gap: 1rem;
+               padding: 1rem;
+           }
+
+           .phoneme-progress-card {
+               background: #f8f9fa;
+               padding: 1rem;
+               border-radius: 8px;
+               display: flex;
+               flex-direction: column;
+               gap: 0.5rem;
+           }
+
+           .phoneme-label {
+               font-size: 1.2em;
+               font-weight: 500;
+               color: #333;
+           }
+
+           .progress-bar-container {
+               width: 100%;
+               height: 6px;
+               background: #e0e0e0;
+               border-radius: 3px;
+               overflow: hidden;
+           }
+
+           .progress-bar {
+               height: 100%;
+               background: #2196f3;
+               border-radius: 3px;
+               transition: width 0.3s ease;
+           }
+
+           .progress-percentage {
+               font-size: 0.9em;
+               color: #666;
+               margin-top: 0.2rem;
+           }
+
+           .practice-focus-title {
+               font-size: 1.5em;
+               font-weight: 500;
+               color: #333;
+               margin-bottom: 1rem;
+               padding-left: 1rem;
+           }
+       `;
+       document.head.appendChild(styleSheet);
+
+       // Initialize on page load
+       document.addEventListener('DOMContentLoaded', () => {
+           loadProblemPhonemes();
+       });
+   </script>
+</body>
+</html>

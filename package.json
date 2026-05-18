@@ -1,0 +1,11 @@
+{
+  "name": "fluentvoice",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered speech therapy and pronunciation practice",
+  "scripts": {
+    "postinstall": "npm install --prefix server",
+    "start": "npm start --prefix server",
+    "dev": "npm run dev --prefix server"
+  }
+}
