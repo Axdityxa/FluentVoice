@@ -13,16 +13,22 @@ FluentVoice/
 │   ├── proficiency.html
 │   ├── practice.html
 │   └── analyze.html
-├── server/              # Express API
-│   ├── server.js
-│   └── uploads/         # Temporary audio (gitignored)
+├── app/                 # FastAPI backend
+│   ├── main.py          # Application entry point
+│   ├── config.py        # Pydantic settings
+│   ├── routers/
+│   │   └── speech.py    # API route handlers
+│   └── services/
+│       ├── azure_speech.py      # Azure pronunciation assessment
+│       └── openai_feedback.py   # AI feedback generation
 ├── .env.example
-└── package.json         # Root scripts (install + dev)
+├── requirements.txt
+└── README.md
 ```
 
 ## Requirements
 
-- [Node.js](https://nodejs.org/) 18+
+- [Python](https://www.python.org/) 3.10+
 - [Azure Speech Service](https://azure.microsoft.com/products/ai-services/speech-to-text) subscription
 - [OpenAI API key](https://platform.openai.com/) (optional, for AI feedback)
 
@@ -31,14 +37,27 @@ FluentVoice/
 1. Clone the repository.
 2. Copy `.env.example` to `.env` in the project root.
 3. Fill in your credentials in `.env`.
-4. Install dependencies and start the server:
+4. Create a virtual environment and install dependencies:
 
 ```bash
-npm install
-npm run dev
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
-5. Open **http://localhost:3000** in your browser and allow microphone access.
+5. Start the development server:
+
+```bash
+uvicorn app.main:app --reload --port 3000
+```
+
+6. Open **http://localhost:3000** in your browser and allow microphone access.
 
 ## Environment variables
 
@@ -55,9 +74,9 @@ Create `.env` in the project root:
 
 | Command | Description |
 |---------|-------------|
-| `npm install` | Installs root + server dependencies |
-| `npm run dev` | Starts server with nodemon |
-| `npm start` | Starts server in production mode |
+| `pip install -r requirements.txt` | Install Python dependencies |
+| `uvicorn app.main:app --reload --port 3000` | Start dev server with auto-reload |
+| `uvicorn app.main:app --port 3000` | Start production server |
 
 ## User flow
 
