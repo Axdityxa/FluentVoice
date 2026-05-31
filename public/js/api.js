@@ -2,24 +2,20 @@
  * Shared API helpers for FluentVoice frontend.
  */
 const FluentVoiceAPI = {
-    async setReference(referenceText) {
-        const response = await fetch('/api/set-reference', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ referenceText })
-        });
-
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || 'Failed to set reference text');
-        }
-
-        return response.json();
-    },
-
-    async analyzeSpeech(audioBlob, filename = 'recording.wav') {
+    /**
+     * Upload audio for pronunciation analysis.
+     *
+     * @param {Blob}   audioBlob      - WAV audio blob
+     * @param {string} referenceText  - The sentence the user was supposed to read
+     * @param {string} [filename]     - Optional filename (default: 'recording.wav')
+     * @returns {Promise<Object>}     - { transcription, phonemes, feedback, aiFeedback }
+     */
+    async analyzeSpeech(audioBlob, referenceText, filename = 'recording.wav') {
         const formData = new FormData();
         formData.append('audio', audioBlob, filename);
+        if (referenceText) {
+            formData.append('referenceText', referenceText);
+        }
 
         const response = await fetch('/api/analyze-speech', {
             method: 'POST',
@@ -29,7 +25,7 @@ const FluentVoiceAPI = {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            throw new Error(data.error || 'Speech analysis failed');
+            throw new Error(data.detail || data.error || 'Speech analysis failed');
         }
 
         return data;
